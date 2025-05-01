@@ -108,14 +108,15 @@ function get_metadata_value() {
     print_metadata_value_if_exists ${MDS_PREFIX}/project/${varname}
     return_code=$?
   fi
-
   return ${return_code}
 }
 
 function get_metadata_attribute() {
   local -r attribute_name="$1"
   local -r default_value="${2:-}"
+  set +e
   get_metadata_value "attributes/${attribute_name}" || echo -n "${default_value}"
+  set -e
 }
 
 OS_NAME="$(lsb_release -is | tr '[:upper:]' '[:lower:]')"
@@ -186,6 +187,7 @@ function set_cuda_version() {
     "2.0" ) DEFAULT_CUDA_VERSION="12.1.1" ;; # Cuda 12.1.1 - Driver v530.30.02 is the latest version supported by Ubuntu 18)
     "2.1" ) DEFAULT_CUDA_VERSION="12.4.1" ;;
     "2.2" ) DEFAULT_CUDA_VERSION="12.6.3" ;;
+    "2.3" ) DEFAULT_CUDA_VERSION="12.6.3" ;;
     *   )
       echo "unrecognized Dataproc image version: ${DATAPROC_IMAGE_VERSION}"
       exit 1
@@ -790,11 +792,17 @@ function install_pytorch() {
 
   local env
   env=$(get_metadata_attribute 'gpu-conda-env' 'dpgce')
-  local mc3=/opt/conda/miniconda3
-  [[ -d ${mc3} ]] || return
-  local envpath="${mc3}/envs/${env}"
+
+  local conda_root_path
+  if version_lt "${DATAPROC_IMAGE_VERSION}" "2.3" ; then
+    conda_root_path="/opt/conda/miniconda3"
+  else
+    conda_root_path="/opt/conda"
+  fi
+  [[ -d ${conda_root_path} ]] || return
+  local envpath="${conda_root_path}/envs/${env}"
   if [[ "${env}" == "base" ]]; then
-    echo "WARNING: installing to base environment known to cause solve issues" ; envpath="${mc3}" ; fi
+    echo "WARNING: installing to base environment known to cause solve issues" ; envpath="${conda_root_path}" ; fi
   # Set numa node to 0 for all GPUs
   for f in $(ls /sys/module/nvidia/drivers/pci:nvidia/*/numa_node) ; do echo 0 > ${f} ; done
 
@@ -838,7 +846,7 @@ function install_pytorch() {
     if le_cuda11 ; then cudart_spec="cudatoolkit" ; fi
 
     # Install pytorch and company to this environment
-    "${mc3}/bin/mamba" "${verb}" -n "${env}" \
+    "${conda_root_path}/bin/mamba" "${verb}" -n "${env}" \
       -c conda-forge -c nvidia -c rapidsai \
       numba pytorch tensorflow[and-cuda] rapids pyspark \
       "cuda-version<=${CUDA_VERSION}" "${cudart_spec}"
@@ -973,13 +981,26 @@ function add_repo_nvidia_container_toolkit() {
   local signing_key_url="${nvctk_root}/gpgkey"
   local repo_data
 
-  if is_debuntu ; then repo_data="${nvctk_root}/stable/deb/\$(ARCH) /"
-                  else repo_data="${nvctk_root}/stable/rpm/nvidia-container-toolkit.repo" ; fi
-
-  os_add_repo nvidia-container-toolkit \
-              "${signing_key_url}" \
-              "${repo_data}" \
-              "no"
+  # Since there are more than one keys to go into this keychain, we can't call os_add_repo, which only works with one
+  if is_debuntu ; then
+    # "${repo_name}" "${signing_key_url}" "${repo_data}" "${4:-yes}" "${kr_path}" "${6:-}"
+    local -r repo_name="nvidia-container-toolkit"
+    local -r kr_path="/usr/share/keyrings/${repo_name}.gpg"
+    execute_with_retries gpg --keyserver keyserver.ubuntu.com \
+      --no-default-keyring --keyring "${kr_path}" \
+      --recv-keys "0xae09fe4bbd223a84b2ccfce3f60f4b3d7fa2af80" "0xeb693b3035cd5710e231e123a4b469963bf863cc" "0xc95b321b61e88c1809c4f759ddcae044f796ecb0"
+    local -r repo_data="${nvctk_root}/stable/deb/\$(ARCH) /"
+    local -r repo_path="/etc/apt/sources.list.d/${repo_name}.list"
+    echo "deb     [signed-by=${kr_path}] ${repo_data}" >  "${repo_path}"
+    echo "deb-src [signed-by=${kr_path}] ${repo_data}" >> "${repo_path}"
+    execute_with_retries apt-get update
+  else
+    repo_data="${nvctk_root}/stable/rpm/nvidia-container-toolkit.repo"
+    os_add_repo nvidia-container-toolkit \
+                "${signing_key_url}" \
+                "${repo_data}" \
+                "no"
+  fi
 }
 
 function add_repo_cuda() {
@@ -1011,9 +1032,9 @@ function build_driver_from_github() {
   pushd "${workdir}"
   test -d "${workdir}/open-gpu-kernel-modules" || {
     tarball_fn="${DRIVER_VERSION}.tar.gz"
-    curl ${curl_retry_args} \
+    execute_with_retries curl ${curl_retry_args} \
       "https://github.com/NVIDIA/open-gpu-kernel-modules/archive/refs/tags/${tarball_fn}" \
-      | tar xz
+      \| tar xz
     mv "open-gpu-kernel-modules-${DRIVER_VERSION}" open-gpu-kernel-modules
   }
 
@@ -1041,7 +1062,7 @@ function build_driver_from_github() {
           local now_epoch="$(date -u +%s)"
           if (( now_epoch > timeout_epoch )) ; then
             # detect unexpected build failure after 45m
-            ${gsutil_cmd} rm "${gcs_tarball}.building"
+            ${gsutil_cmd} rm "${gcs_tarball}.building" || echo "might have been deleted by a peer"
             break
           fi
           sleep 5m
@@ -1415,6 +1436,9 @@ function install_gpu_agent() {
   local venv="${install_dir}/venv"
   python_interpreter="/opt/conda/miniconda3/bin/python3"
   [[ -f "${python_interpreter}" ]] || python_interpreter="$(command -v python3)"
+  if version_ge "${DATAPROC_IMAGE_VERSION}" "2.2" && is_debuntu ; then
+    execute_with_retries "apt-get install -y -qq python3-venv"
+  fi
   "${python_interpreter}" -m venv "${venv}"
 (
   source "${venv}/bin/activate"
@@ -1689,16 +1713,34 @@ function install_build_dependencies() {
 
     if [[ "${retval}" == "0" ]] ; then return ; fi
 
+    local os_ver="$(echo $uname_r | perl -pe 's/.*el(\d+_\d+)\..*/$1/; s/_/./')"
+    local vault="https://download.rockylinux.org/vault/rocky/${os_ver}"
     if grep -q 'Unable to find a match: kernel-devel-' "${install_log}" ; then
       # this kernel-devel may have been migrated to the vault
-      local os_ver="$(echo $uname_r | perl -pe 's/.*el(\d+_\d+)\..*/$1/; s/_/./')"
-      local vault="https://download.rockylinux.org/vault/rocky/${os_ver}"
       dnf_cmd="$(echo dnf -y -q --setopt=localpkg_gpgcheck=1 install \
         "${vault}/BaseOS/x86_64/os/Packages/k/kernel-${uname_r}.rpm" \
         "${vault}/BaseOS/x86_64/os/Packages/k/kernel-core-${uname_r}.rpm" \
         "${vault}/BaseOS/x86_64/os/Packages/k/kernel-modules-${uname_r}.rpm" \
         "${vault}/BaseOS/x86_64/os/Packages/k/kernel-modules-core-${uname_r}.rpm" \
         "${vault}/AppStream/x86_64/os/Packages/k/kernel-devel-${uname_r}.rpm"
+       )"
+    fi
+
+    set +e
+    eval "${dnf_cmd}" > "${install_log}" 2>&1
+    local retval="$?"
+    set -e
+
+    if [[ "${retval}" == "0" ]] ; then return ; fi
+
+    if grep -q 'Status code: 404 for https' "${install_log}" ; then
+      local stg_url="https://download.rockylinux.org/stg/rocky/${os_ver}/devel/x86_64/os/Packages/k/"
+      dnf_cmd="$(echo dnf -y -q --setopt=localpkg_gpgcheck=1 install \
+        "${stg_url}/kernel-${uname_r}.rpm" \
+        "${stg_url}/kernel-core-${uname_r}.rpm" \
+        "${stg_url}/kernel-modules-${uname_r}.rpm" \
+        "${stg_url}/kernel-modules-core-${uname_r}.rpm" \
+        "${stg_url}/kernel-devel-${uname_r}.rpm"
        )"
     fi
 
@@ -1920,7 +1962,8 @@ function main() {
   # Restart YARN services if they are running already
   for svc in resourcemanager nodemanager; do
     if [[ $(systemctl show hadoop-yarn-${svc}.service -p SubState --value) == 'running' ]]; then
-      systemctl restart hadoop-yarn-${svc}.service
+      systemctl stop hadoop-yarn-${svc}.service
+      systemctl start hadoop-yarn-${svc}.service
     fi
   done
 }
@@ -2241,10 +2284,13 @@ function prepare_to_install(){
   fi
   curl_retry_args="-fsSL --retry-connrefused --retry 10 --retry-max-time 30"
 
+  tmpdir=/tmp/
+  mount_ramdisk
+  readonly install_log="${tmpdir}/install.log"
+
   prepare_gpu_env
 
   workdir=/opt/install-dpgce
-  tmpdir=/tmp/
   temp_bucket="$(get_metadata_attribute dataproc-temp-bucket)"
   readonly temp_bucket
   readonly pkg_bucket="gs://${temp_bucket}/dpgce-packages"
@@ -2254,9 +2300,6 @@ function prepare_to_install(){
   mkdir -p "${workdir}/complete"
   trap exit_handler EXIT
   set_proxy
-  mount_ramdisk
-
-  readonly install_log="${tmpdir}/install.log"
 
   is_complete prepare.common && return
 
