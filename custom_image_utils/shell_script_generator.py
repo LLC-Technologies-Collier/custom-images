@@ -220,10 +220,13 @@ function main() {{
   fi
 
   echo "Monitor startup logs in {log_dir}/startup-script.log"
-  echo 'Waiting for customization script to finish and VM shutdown.'
 
   # too many serial port output requests per minute occur if they all occur at once
-  sleep $(( ( RANDOM % 60 ) + 20 ))
+  local sleep_duration="$(( ( RANDOM % 60 ) + 20 ))"
+
+  echo "Pausing ${{sleep_duration}}s and then waiting for customization script to finish and VM shutdown."
+
+  sleep ${{sleep_duration}}
 
   execute_with_retries gcloud compute instances tail-serial-port-output {image_name}-install \
       --project={project_id} \
