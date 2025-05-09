@@ -1147,7 +1147,6 @@ function build_driver_from_packages() {
     configure_dkms_certs
     if execute_with_retries dnf -y -q module install "nvidia-driver:${DRIVER}-dkms" ; then
       echo "nvidia-driver:${DRIVER}-dkms installed successfully"
-      :
     else
       execute_with_retries dnf -y -q module install 'nvidia-driver:latest'
     fi
@@ -2445,7 +2444,7 @@ function exit_handler() {
            unshift(@samples,$first); $final=$samples[-1];
            ($starting)=(split(/\s+/,$first))[2] =~ /^(\d+)/;
              ($ending)=(split(/\s+/,$final))[2] =~ /^(\d+)/;
-           @siz=( sort { $a <=> $b }
+           @siz=( sort { $a <= $b }
                    map { (split)[2] =~ /^(\d+)/ } @samples );
 $max=$siz[0]; $min=$siz[-1]; $inc=$max-$starting;
 print( "     samples-taken: ", scalar @siz, $/,
