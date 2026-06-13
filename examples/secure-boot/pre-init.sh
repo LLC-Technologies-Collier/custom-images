@@ -81,26 +81,26 @@ function create_h100_instance() {
   python3 generate_custom_image.py \
     --machine-type "a3-highgpu-2g" \
     --accelerator  "type=nvidia-h100-80gb,count=2" \
-    $*
+    "$@"
 }
 
 function create_t4_instance() {
   python3 generate_custom_image.py \
     --machine-type "n1-standard-32" \
     --accelerator  "type=nvidia-tesla-t4,count=1" \
-    $*
+    "$@"
 }
 
 function create_unaccelerated_instance() {
   python3 generate_custom_image.py \
     --machine-type "n1-standard-2" \
-    $*
+    "$@"
 }
 
 function create_arm_instance() {
   python3 generate_custom_image.py \
     --machine-type "t2a-standard-2" \
-    $*
+    "$@"
 }
 
 OPTIONAL_COMPONENTS_ARG=""
@@ -322,6 +322,7 @@ function generate_from_prerelease_version() {
     "2.3-debian12"     ) image_uri="${img_pfx}/dataproc-2-3-deb12-${src_timestamp}-rc01"  ;;
     "2.3-rocky9"       ) image_uri="${img_pfx}/dataproc-2-3-roc9-${src_timestamp}-rc01"   ;;
     "2.3-ubuntu22"     ) image_uri="${img_pfx}/dataproc-2-3-ubu22-${src_timestamp}-rc01"  ;;
+    "2.3-ubuntu22-arm" ) image_uri="${img_pfx}/dataproc-2-3-ubu22-arm-${src_timestamp}-rc01"  ;;
     "2.3-ml-ubuntu22"  ) image_uri="${img_pfx}/dataproc-2-3-ml-ubu22-${src_timestamp}-rc01"  ;;
   esac
   generate --base-image-uri "${image_uri}"
@@ -355,7 +356,7 @@ time generate_from_dataproc_version "${dataproc_version}"
 
 # Configure a proxy on secure-boot image
 PURPOSE="secure-proxy"
-customization_script="${DATAPROC_EVOLUTION_DIR}/initialization-actions/http-proxy/http-proxy.sh"
+customization_script="startup_script/gce-proxy-setup.sh"
 print_status "=== Generating base ${PURPOSE} image for ${dataproc_version} ==="
 time generate_from_base_purpose "secure-boot"
 
