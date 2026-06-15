@@ -99,7 +99,7 @@ function create_unaccelerated_instance() {
 
 function create_arm_instance() {
   python3 generate_custom_image.py \
-    --machine-type "t2a-standard-2" \
+    --machine-type "c4a-standard-2" \
     "$@"
 }
 
@@ -254,6 +254,7 @@ function generate() {
         --trusted-cert "tls/db.der" \
         --shutdown-instance-timer-sec=30 \
         --no-smoke-test \
+        --retain-on-failure \
         ${extra_args}
       then
         report_result "Success"
@@ -388,7 +389,7 @@ case "${dataproc_version}" in
   "2.2-rocky9"       ) disk_size_gb="60" ;; #  49.79G  43.51G    6.28G  88% / # 20250429-193537-tf
   "2.2-ubuntu22"     ) disk_size_gb="60" ;; #  48.28G  43.32G    4.94G  90% / # 20250429-193537-tf
 
-  "2.3-debian12"     ) disk_size_gb="50" ;; #  41.11G  36.20G    3.12G  93% / # 20250507-083009-tf
+  "2.3-debian12"     ) disk_size_gb="100" ;; # Increased to 100GB to prevent out-of-space during monolithic optional components accumulation
   "2.3-rocky9"       ) disk_size_gb="50" ;; #  49.79G  37.82G   11.98G  76% / # 20250507-083009-tf
   "2.3-ubuntu22"     ) disk_size_gb="50" ;; #  40.52G  36.18G    4.33G  90% / # 20250507-083009-tf
   "2.3-ml-ubuntu22"  ) disk_size_gb="70" ;; #  40.52G  36.18G    4.33G  90% / # 20250507-083009-tf

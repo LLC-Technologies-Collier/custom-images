@@ -61,7 +61,7 @@ fi
 # Determine Dataproc Image
 if [[ -n "${DATAPROC_IMAGE:-}" ]]; then
   echo "Using image from ENV: ${DATAPROC_IMAGE}"
-elif [[ -f "${CACHE_FILE}" ]] && [[ $(($(date +%s) - $(stat -c %Y "${CACHE_FILE}"))) -lt "${CACHE_TTL_SECONDS}" ]]; then
+elif [[ -f "${CACHE_FILE}" ]] && [[ $(($(date +%s) - $(date -r "${CACHE_FILE}" +%s))) -lt "${CACHE_TTL_SECONDS}" ]]; then
   DATAPROC_IMAGE=$(cat "${CACHE_FILE}")
   echo "Using cached image: ${DATAPROC_IMAGE}"
 else
