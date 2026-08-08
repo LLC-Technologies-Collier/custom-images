@@ -95,6 +95,13 @@ function create_unaccelerated_instance() {
     $*
 }
 
+function create_highcpu_instance() {
+  python3 generate_custom_image.py \
+    --machine-type "n1-standard-32" \
+    $*
+}
+
+
 OPTIONAL_COMPONENTS_ARG=""
 
 function generate() {
@@ -179,6 +186,19 @@ function generate() {
       create_function="create_t4_instance"
     fi
 
+    if [[ "${customization_script}" =~ "harden-kernel-and-os.sh" ]] ; then
+      eval "$(bash examples/secure-boot/create-key-pair.sh)"
+      metadata_args+=(
+        "public_secret_name=${public_secret_name}"
+        "private_secret_name=${private_secret_name}"
+        "secret_project=${secret_project}"
+        "secret_version=${secret_version}"
+        "modulus_md5sum=${modulus_md5sum}"
+      )
+      create_function="create_highcpu_instance"
+    fi
+
+
     if [[ "${customization_script}" =~ "spark-rapids.sh" ]] ; then
       metadata_args+=("rapids-runtime=SPARK")
       create_function="create_t4_instance"
@@ -241,7 +261,7 @@ function generate() {
         --subnet               "${SUBNET}" \
         ${OPTIONAL_COMPONENTS_ARG} \
         --trusted-cert "tls/db.der" \
-        --shutdown-instance-timer-sec=30 \
+        --shutdown-instance-timer-sec=300 \
         --no-smoke-test \
         ${extra_args}
       then
@@ -341,6 +361,13 @@ PURPOSE="secure-boot"
 customization_script="examples/secure-boot/no-customization.sh"
 print_status "=== Generating base secure-boot image for ${dataproc_version} ==="
 time generate_from_dataproc_version "${dataproc_version}"
+
+# Harden Kernel on secure-boot image
+PURPOSE="hardened"
+customization_script="examples/secure-boot/harden-kernel-and-os.sh"
+print_status "=== Generating hardened kernel image for ${dataproc_version} ==="
+time generate_from_base_purpose "secure-boot"
+
 
 # Configure a proxy on secure-boot image
 PURPOSE="secure-proxy"

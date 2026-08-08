@@ -14,9 +14,10 @@
 #
 # This script loads and validates environment variables from env.json
 
-if [[ -z "${ENV_JSON_PATH}" ]]; then
+if [[ -z "${ENV_JSON_PATH:-}" ]]; then
   ENV_JSON_PATH="env.json"
 fi
+
 
 if [[ -z "${DATAPROC_EVOLUTION_DIR:-}" ]]; then
   SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
