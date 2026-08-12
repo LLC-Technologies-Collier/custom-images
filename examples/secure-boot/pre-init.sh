@@ -198,6 +198,10 @@ function generate() {
       create_function="create_highcpu_instance"
     fi
 
+    if [[ "${customization_script}" =~ "harden-userspace.sh" ]] ; then
+      create_function="create_highcpu_instance"
+    fi
+
 
     if [[ "${customization_script}" =~ "spark-rapids.sh" ]] ; then
       metadata_args+=("rapids-runtime=SPARK")
@@ -356,17 +360,25 @@ else
   echo "WARNING: /custom-images/key.json not found, gcloud calls might fail."
 fi
 
-# Install secure-boot certs without customization
-PURPOSE="secure-boot"
-customization_script="examples/secure-boot/no-customization.sh"
-print_status "=== Generating base secure-boot image for ${dataproc_version} ==="
+# Layer 1: Hardened Kernel (replaces secure-boot no-op)
+PURPOSE="hardened-kernel"
+customization_script="examples/secure-boot/harden-kernel-and-os.sh"
+print_status "=== Generating hardened kernel image (Layer 1) for ${dataproc_version} ==="
 time generate_from_dataproc_version "${dataproc_version}"
 
-# Harden Kernel on secure-boot image
-PURPOSE="hardened"
-customization_script="examples/secure-boot/harden-kernel-and-os.sh"
-print_status "=== Generating hardened kernel image for ${dataproc_version} ==="
-time generate_from_base_purpose "secure-boot"
+# Layer 2: GPU Drivers
+PURPOSE="gpu"
+customization_script="examples/secure-boot/install_gpu_driver.sh"
+print_status "=== Generating GPU image (Layer 2) for ${dataproc_version} ==="
+time generate_from_base_purpose "hardened-kernel"
+
+# Layer 3: Hardened Userspace
+PURPOSE="hardened-userspace"
+customization_script="examples/secure-boot/harden-userspace.sh"
+print_status "=== Generating hardened userspace image (Layer 3) for ${dataproc_version} ==="
+time generate_from_base_purpose "gpu"
+
+
 
 
 # Configure a proxy on secure-boot image

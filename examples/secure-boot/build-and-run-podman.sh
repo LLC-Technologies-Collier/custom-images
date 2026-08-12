@@ -136,7 +136,7 @@ run_gcloud "image_list" gcloud compute images    list                   --format
 report_result "Done"
 
 print_status "Running build in container..."
-time podman run -it --rm \
+time podman run --rm \
   -v $(pwd)/${KEY_FILE}:/custom-images/key.json:ro \
   -v $(pwd)/tmp/logs/${timestamp}:/tmp \
   -v $(pwd)/tmp/tls/${timestamp}:/custom-images/tls \

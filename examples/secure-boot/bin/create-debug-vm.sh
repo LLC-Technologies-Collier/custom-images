@@ -35,6 +35,8 @@ while getopts "fp" opt; do
 done
 shift $((OPTIND -1))
 
+DATAPROC_IMAGE="${DATAPROC_IMAGE:-dataproc-2-3-deb12-20260808-185405-hardened}"
+
 if [[ -z "${IMAGE_VERSION}" ]]; then
   echo "ERROR: IMAGE_VERSION is not set in env.json."
   exit 1
@@ -69,7 +71,7 @@ elif [[ -f "${CACHE_FILE}" ]] && [[ $(($(date +%s) - $(date -r "${CACHE_FILE}" +
 else
   echo "DATAPROC_IMAGE not set or cache stale, querying for the latest ${IMAGE_VERSION} image..."
   IMAGE_PREFIX="dataproc-$(echo "${IMAGE_VERSION}" | sed -e 's/\./-/g' -e 's/-debian12/-deb12/g' -e 's/-debian11/-deb11/g' -e 's/-ubuntu22/-ubu22/g' -e 's/-rocky9/-roc9/g')"
-  DATAPROC_IMAGE=$(gcloud compute images list --project cloud-dataproc \
+  DATAPROC_IMAGE=$(gcloud compute images list --project "${IMAGE_PROJECT:-cloud-dataproc}" \
     --filter="name:${IMAGE_PREFIX} AND status=READY" \
     --format="value(name)" | \
     grep -v "eap" | \
@@ -155,17 +157,42 @@ declare -a gcloud_create_args=(
     gcloud compute instances create "${INSTANCE_NAME}"
     --project "${PROJECT_ID}"
     --zone "${ZONE}"
-    --machine-type n2-standard-32
+    --machine-type "${MACHINE_TYPE:-n2-standard-32}"
 
     --image "${DATAPROC_IMAGE}"
-    --image-project cloud-dataproc
-    --boot-disk-size 30G
+    --image-project "${IMAGE_PROJECT:-cloud-dataproc}"
+    --boot-disk-size 50G
     --boot-disk-type pd-ssd
     --scopes "https://www.googleapis.com/auth/cloud-platform"
+    --maintenance-policy "TERMINATE"
     --service-account "${GSA}"
     --subnet "${SUBNET}"
     --metadata="${METADATA_STRING}"
 )
+
+# Determine if customization requires kernel module compilation (needs private key)
+NEED_KEY=0
+if [[ "${CUSTOMIZATION_SCRIPT}" =~ "install_gpu_driver.sh" ]] || [[ "${CUSTOMIZATION_SCRIPT}" =~ "harden-kernel-and-os.sh" ]]; then
+  NEED_KEY=1
+fi
+
+# Heuristic: Standard 'cloud-dataproc' images do not trust custom keys by default
+LACK_KEY_FOR_IMAGE=0
+if [[ "${IMAGE_PROJECT}" == "cloud-dataproc" ]]; then
+  LACK_KEY_FOR_IMAGE=1
+fi
+
+if [[ "${NEED_KEY}" -eq 1 ]] && [[ "${LACK_KEY_FOR_IMAGE}" -eq 1 ]]; then
+  echo "INFO: Compiling kernel stuff on standard image. Disabling Secure Boot to allow unsigned modules."
+  gcloud_create_args+=("--no-shielded-secure-boot")
+else
+  # Otherwise, Secure Boot can be enabled. Explicitly enable for custom images to verify compliance.
+  if [[ "${IMAGE_PROJECT}" != "cloud-dataproc" ]]; then
+    echo "INFO: Custom image detected (${IMAGE_PROJECT}). Enabling Shielded Secure Boot."
+    gcloud_create_args+=("--shielded-secure-boot")
+  fi
+fi
+
 run_gcloud create_instance "${gcloud_create_args[@]}"
 
 echo "Instance ${INSTANCE_NAME} created."

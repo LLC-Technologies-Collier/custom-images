@@ -95,7 +95,7 @@ screen -dmS customization sudo FORCE_APPLY="${FORCE_APPLY:-0}" bash -c "
   echo -e \"\${BLUE}========================================================================\${NC}\"
   echo ''
   
-  bash ${TARGET_SCRIPT} 2>&1 | tee ${LOG_FILE}
+  setenforce 0 || true; bash ${TARGET_SCRIPT} 2>&1 | tee ${LOG_FILE}
   EXIT_CODE=\${PIPESTATUS[0]}
   
   # 5. Print clean colored final status indicator

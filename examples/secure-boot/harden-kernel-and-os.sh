@@ -70,6 +70,7 @@ function install_dependencies() {
         apt-get update -y -qq
         apt-get install -y -qq \
             git build-essential libncurses-dev bison flex libssl-dev libelf-dev \
+            libdw-dev rsync \
             bc dwarves openssl lz4 sbsigntool
     elif command -v dnf >/dev/null 2>&1; then
         dnf groupinstall -y "Development Tools"
@@ -366,7 +367,7 @@ function sign_artifacts() {
     
     print_status "Installing custom kernel packages..."
     if command -v dpkg >/dev/null 2>&1; then
-        dpkg -i linux-image-*.deb linux-headers-*.deb || true # Allow failure if already installed or partial
+        dpkg -i linux-image-*.deb linux-headers-*.deb linux-libc-dev*.deb || true # Allow failure if already installed or partial
     elif command -v rpm >/dev/null 2>&1; then
         rpm -ivh kernel-*.rpm || true
     fi
@@ -402,6 +403,17 @@ function sign_artifacts() {
 
 # --- 7. Update Bootloader ---
 function update_bootloader() {
+    print_status "Configuring bootloader parameters..."
+    if [[ -f /etc/default/grub ]]; then
+        if ! grep -q "selinux=1" /etc/default/grub; then
+            print_status "Adding SELinux parameters to /etc/default/grub"
+            # We enable SELinux, set it to permissive (enforcing=0), and explicitly choose it over AppArmor
+            sed -i 's/^GRUB_CMDLINE_LINUX="\(.*\)"/GRUB_CMDLINE_LINUX="\1 selinux=1 enforcing=0 security=selinux"/' /etc/default/grub
+        else
+            print_status "SELinux parameters already present in /etc/default/grub"
+        fi
+    fi
+
     print_status "Updating bootloader..."
     if command -v update-grub >/dev/null 2>&1; then
         update-grub
