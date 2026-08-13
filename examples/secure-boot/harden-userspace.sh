@@ -241,6 +241,25 @@ function build_systemd() {
     print_success "Systemd built."
 }
 
+function active_filesystem_relabel() {
+    print_status "Commencing Active Filesystem Relabeling..."
+    
+    # Ensure policy is recognized
+    if ! semodule -l | grep -q "targeted"; then
+         print_warning "Standard targeted policy not found in semodule list."
+    fi
+
+    # Force relabeling recursively, suppressing verbose noise but logging to a file
+    local relabel_log="/var/log/selinux-active-relabel.log"
+    print_status "Relabeling progress logging to ${relabel_log}"
+    
+    # We use -F to force reset contexts
+    restorecon -Rv -F / > "${relabel_log}" 2>&1 || print_warning "Some files could not be relabeled. Check ${relabel_log}"
+    
+    print_success "Active filesystem relabeling completed."
+}
+
+
 function cleanup() {
     print_status "Cleaning up..."
     # rm -rf "${BUILD_DIR}" # Keep for now for debugging, but should be removed in final
@@ -260,7 +279,9 @@ function main() {
     clone_testsuite
     build_selinux
     build_systemd
+    active_filesystem_relabel
     run_tests
+
     cleanup
     echo "BuildSucceeded: Customization script complete."
 }
