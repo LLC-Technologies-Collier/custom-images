@@ -22,8 +22,8 @@ if (( DEBUG != 0 )); then
   set -x
 fi
 
-source examples/secure-boot/lib/env.sh
-source examples/secure-boot/lib/util.sh
+source examples/harden/lib/env.sh
+source examples/harden/lib/util.sh
 
 # https://github.com/glevand/secure-boot-utils
 # https://cloud.google.com/compute/shielded-vm/docs/creating-shielded-images#adding-shielded-image

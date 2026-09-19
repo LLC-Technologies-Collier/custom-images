@@ -5,30 +5,31 @@ set -e
 DATAPROC_IMAGE_VERSION="${1:-2.3-debian12}"
 
 # Source environment variables and utilities
-if [[ -f examples/secure-boot/lib/env.sh ]]; then
-  source examples/secure-boot/lib/env.sh
+if [[ -f examples/harden/lib/env.sh ]]; then
+  source examples/harden/lib/env.sh
 else
-  echo "ERROR: examples/secure-boot/lib/env.sh not found."
+  echo "ERROR: examples/harden/lib/env.sh not found."
   exit 1
 fi
-if [[ -f examples/secure-boot/lib/util.sh ]]; then
-  source examples/secure-boot/lib/util.sh
+if [[ -f examples/harden/lib/util.sh ]]; then
+  source examples/harden/lib/util.sh
 else
-  echo "ERROR: examples/secure-boot/lib/util.sh not found."
+  echo "ERROR: examples/harden/lib/util.sh not found."
   exit 1
 fi
+
 
 # Check if env.json exists
 if [[ ! -f env.json ]]; then
   echo "ERROR: env.json not found."
-  echo "Please create an env.json file from examples/secure-boot/env.json.sample"
+  echo "Please create an env.json file from examples/harden/env.json.sample"
   exit 1
 fi
 
 # Validate essential variables
 if [[ -z "${GSA}" || -z "${PROJECT_ID}" ]]; then
-  echo "ERROR: GSA or PROJECT_ID is not set in examples/secure-boot/lib/env.sh."
-  echo "Please check your env.json and examples/secure-boot/lib/env.sh configuration."
+  echo "ERROR: GSA or PROJECT_ID is not set in examples/harden/lib/env.sh."
+  echo "Please check your env.json and examples/harden/lib/env.sh configuration."
   exit 1
 fi
 
@@ -54,8 +55,9 @@ function configure_service_account() {
   fi
 
   print_status "Creating/Fetching key pair for secure boot... "
-  eval "$(bash examples/secure-boot/create-key-pair.sh)"
+  eval "$(bash examples/harden/create-key-pair.sh)"
   report_result "Done"
+
 
   print_status "Binding roles to ${GSA}... "
   run_gcloud "bind_dataproc_worker" gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
@@ -148,8 +150,8 @@ time podman run --rm \
   -e REPRO_TMPDIR=/tmp \
   -e DATAPROC_EVOLUTION_DIR=${DATAPROC_EVOLUTION_DIR} \
   ${image} \
-  bash -x examples/secure-boot/pre-init.sh "${DATAPROC_IMAGE_VERSION}"
-#  bash examples/secure-boot/build-current-images.sh
+  bash -x examples/harden/pre-init.sh "${DATAPROC_IMAGE_VERSION}"
+#  bash examples/harden/build-current-images.sh
 function revoke_bindings() {
   print_status "Revoking roles from ${GSA}... "
   run_gcloud "revoke_dataproc_worker" gcloud projects remove-iam-policy-binding "${PROJECT_ID}" \
